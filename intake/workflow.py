@@ -3,7 +3,7 @@
 import re
 
 from .data import age_days, csv_bytes
-from .skill import QUANTITY, ProviderFailure, parse_note, validate
+from .skill import QUANTITY, ProviderFailure, parse_note, reconcile_category, routing_issues, validate
 
 REGISTER_FIELDS = ("reference", "department", "date", "currency", "amount", "route", "vendor",
                    "item", "quantity", "category", "summary", "approved_at")
@@ -11,10 +11,12 @@ LIMIT_MINOR = {"IDR": 200_000_000, "USD": 15_000}
 SOURCE_FLAGS = re.compile(r"\b(?:belum pasti|belum jelas|tidak diketahui|vendor menyusul|atau|batal)\b", re.I)
 
 
-def run_request(store, reference, provider, revision="v2"):
+def run_request(store, reference, provider, revision="v2", expected_revision=None):
     request = store.get(reference)
     if request["status"] not in {"queued", "error"}:
         raise ValueError("Only queued requests or model errors can be processed")
+    if expected_revision is not None and request["revision"] != expected_revision:
+        raise ValueError("Request changed. Reload before trying again.")
     source = request["source"]
     note = source["notes"]
     route = "finance" if source["amount_minor"] >= LIMIT_MINOR[source["currency"]] else "procurement"
@@ -30,19 +32,23 @@ def run_request(store, reference, provider, revision="v2"):
             store.transition(request, "error", None, route, str(exc), "alert",
                              f"Model failed after {attempts} attempt(s) [{exc}]. Retry or open manual review.")
             return store.get(reference)
-    issues = validate(result, note)
+    reconciled = reconcile_category(result)
+    category_changed = result["category"] != reconciled["category"]
+    result = reconciled
+    issues = validate(result, note) + routing_issues(result, note)
     if route == "finance":
         issues.append("finance_threshold")
     if not 0 <= age_days(source["date"]) <= 90:
         issues.append("date_outside_90_days")
     if SOURCE_FLAGS.search(note) or len(list(QUANTITY.finditer(note))) > 1:
         issues.append("ambiguous_source")
+    catalog_note = " Category resolved by item catalog." if category_changed else ""
     if issues:
         store.transition(request, "review", result, route, ", ".join(issues),
-                         "review_required", f"{route.title()} review requested")
+                         "review_required", f"{route.title()} review requested." + catalog_note)
     else:
         store.transition(request, "approved", result, route, None, "approved",
-                         "Validated request written to the register")
+                         "Validated request written to the register." + catalog_note)
     return store.get(reference)
 
 

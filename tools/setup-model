@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+cd "$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+export LC_ALL=C
+umask 077
+runtime=../runtime
+mkdir -p "$runtime"
+
+get_asset() {
+    file=$1
+    limit=$2
+    checksum=$3
+    address=$4
+    if [ -f "$file" ]; then
+        printf '%s  %s\n' "$checksum" "$file" | shasum -a 256 -c -
+        return
+    fi
+    curl -fLsS --retry 2 --max-filesize "$limit" -o "$file.part" "$address"
+    printf '%s  %s\n' "$checksum" "$file.part" | shasum -a 256 -c -
+    mv "$file.part" "$file"
+}
+
+if [ "$(uname -m)" != arm64 ] || [ "$(uname -s)" != Darwin ]; then
+    printf '%s\n' 'The pinned runtime installer supports Apple Silicon macOS.' >&2
+    exit 1
+fi
+
+get_asset "$runtime/llama-arm64.tar.gz" 18000000 \
+    264fd872de61679c45ad57e1e21c2a2a54e29b35734ecf3d50f24166447ab8d2 \
+    https://github.com/ggml-org/llama.cpp/releases/download/b12651/llama-b12651-bin-macos-arm64.tar.gz
+get_asset "$runtime/qwen2.5-0.5b-instruct-q5_k_m.gguf" 550000000 \
+    041474553fcabfc2a2d67903f9d2c2e50bd92528e670da4f33b5d0ce6e59fd55 \
+    https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q5_k_m.gguf
+mkdir -p "$runtime/llama"
+tar -xf "$runtime/llama-arm64.tar.gz" -C "$runtime/llama" --strip-components=1
+test -x "$runtime/llama/llama-server"

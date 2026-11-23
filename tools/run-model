@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+cd "$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+umask 077
+runtime=../runtime
+key="$runtime/model.key"
+if [ ! -x "$runtime/llama/llama-server" ]; then
+    printf '%s\n' 'Run ./tools/setup-model first.' >&2
+    exit 1
+fi
+python3 - "$key" <<'PY'
+import secrets
+import sys
+from pathlib import Path
+
+try:
+    with Path(sys.argv[1]).open("x") as key:
+        key.write(secrets.token_urlsafe(32) + "\n")
+except FileExistsError:
+    pass
+PY
+exec "$runtime/llama/llama-server" \
+    --model "$runtime/qwen2.5-0.5b-instruct-q5_k_m.gguf" \
+    --host 127.0.0.1 --port "${1:-8082}" --ctx-size 2048 --parallel 1 \
+    --n-gpu-layers 0 --api-key-file "$key" --no-webui --log-disable

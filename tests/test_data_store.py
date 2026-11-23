@@ -1,6 +1,7 @@
-import tempfile
 import unittest
 from pathlib import Path
+
+from helpers import temporary_database_dir
 
 from intake.data import csv_bytes, parse_csv
 from intake.store import Conflict, Store
@@ -11,7 +12,7 @@ ROW = b'p-001,Operations,02/11/2026,IDR,"Rp 1.450.000,00",Kontak person@example.
 
 class IntakeTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = temporary_database_dir()
         self.addCleanup(self.tmp.cleanup)
         self.store = Store(Path(self.tmp.name) / "intake.sqlite3")
 

@@ -1,15 +1,16 @@
 import json
-import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+
+from helpers import temporary_database_dir
 
 from intake.data import parse_csv
 from intake.skill import LlamaProvider, ProviderFailure
 from intake.store import Store
 from intake.workflow import export_operations, export_register, review_request, run_request
 
-NOTE = "Minta 3 unit kabel HDMI dari Toko Fiktif untuk ruang rapat"
+NOTE = "Vendor: Toko Fiktif; barang: kabel HDMI; jumlah 3 unit; untuk ruang rapat."
 GOOD = {"vendor": "Toko Fiktif", "item": "kabel HDMI", "quantity": 3, "category": "it", "summary": NOTE}
 
 
@@ -28,7 +29,7 @@ class PluginStub:
 
 class WorkflowTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = temporary_database_dir()
         self.addCleanup(self.tmp.cleanup)
         self.store = Store(Path(self.tmp.name) / "requests.sqlite3")
 
@@ -75,6 +76,13 @@ class WorkflowTest(unittest.TestCase):
             self.assertEqual(plugin.calls, 2 if isinstance(reply, ProviderFailure) else 1)
             review_request(self.store, reference, output["revision"], "reject", {})
         self.assertFalse(self.store.register())
+
+    def test_catalog_reconciles_wrong_model_category(self):
+        self.ingest("P-4")
+        output = run_request(self.store, "P-4", PluginStub(dict(GOOD, category="facilities")))
+        self.assertEqual(output["status"], "approved")
+        self.assertEqual(output["result"]["category"], "it")
+        self.assertIn("resolved by item catalog", self.store.events()[0]["message"])
 
     def test_model_url_rejects_nonlocal_targets(self):
         for url in ("https://127.0.0.1:8082", "http://example.com", "http://user@localhost",
