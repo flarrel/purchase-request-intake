@@ -81,4 +81,5 @@ PYTHONDONTWRITEBYTECODE=1 INTAKE_HTTP_TEST=1 python3 -m unittest discover -s tes
 ```
 
 The HTTP test uses a deterministic provider double to exercise the operator
-paths and reproduce model failures.
+paths and reproduce model failures. The [evaluation notes](evaluation/README.md)
+describe the separate inference runs with the actual local model.
